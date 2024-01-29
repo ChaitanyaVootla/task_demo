@@ -1,4 +1,4 @@
-taskName: # [REQUIRED] unique task name
+taskName: #[REQUIRED] unique task name
 taskVersion: 0.0.1 # [REQUIRED] version of the task to be published used on publish pipeline
 primaryResource: # [REQUIRED] resource name
 secondaryResource: # secondary resource incase there are multiple resources
