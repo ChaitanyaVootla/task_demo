@@ -1,0 +1,107 @@
+template: true
+valuesFilePath: ./values.yml
+
+resources:
+  - name: {{ .Values.primaryResource }}_publish
+    type: GitRepo
+    configuration:
+      path: {{ .Values.repoPath }}
+      gitProvider: {{ .Values.gitProvider }}
+      branches:
+        include: ^{{ .Values.mainBranch }}$
+      cloneProtocol: {{ .Values.protocol }}
+      buildOn:
+        commit: {{ .Values.publishOnCommit }}
+
+pipelines:
+  - name: {{ .Values.pipelineName }}_publish
+    configuration:
+      jfrogCliVersion: 2
+      {{ if .Values.nodePool }}
+      nodePool: {{ .Values.nodePool }}
+      {{ end }}
+      environmentVariables:
+        readOnly:
+          TASK_NAME: jfrog/{{ .Values.taskName }}
+          TASK_VERSION: 0.0.1
+          TASK_REPOSITORY: pipelines-tasks-local
+          RESOLVE_REPO: npm-virtual
+          JFROG_TASK_DEBUG: "true"
+          JFROG_CLI_LOG_LEVEL: debug
+    steps:
+      - name: build_and_publish_task
+        type: Bash
+        configuration:
+          inputResources:
+            - name: {{ .Values.primaryResource }}_publish
+          integrations:
+            - name: {{ .Values.artifactoryIntegration }}
+        execution:
+          onExecute:
+            # Make sure version is provided
+            - test -n "$TASK_VERSION" -a "$TASK_VERSION" != "0.0.0"
+            - pushd $res_{{ .Values.primaryResource }}_publish_resourcePath
+            # Run do-all target to perform build and test
+            - popd
+            # Run publish task
+            - task: jfrog/publish-task@latest
+              id: publish-{{ .Values.taskName }}
+              input:
+                path: $res_{{ .Values.primaryResource }}_publish_resourcePath
+                targetRepository: $TASK_REPOSITORY
+                taskName: $TASK_NAME
+                taskVersion: $TASK_VERSION
+                includePattern: ^README.md$|^RELEASE.md$|^bin
+          onComplete:
+            - echo "step done!"
+          onFailure:
+            - echo "build and publishing task failed"
+          onSuccess:
+            - echo "task is built and published"
+      {{ if .Values.windowsNodePool }}
+      - name: test_published_task_windows
+        type: Powershell
+        configuration:
+          inputSteps:
+            - name: build_and_publish_task
+          integrations:
+            - name: {{ .Values.artifactoryIntegration }}
+        execution:
+          onExecute:
+            # Run task
+            - task: jfrog/{{ .Values.taskName }}@v{{ .Values.taskVersion }}
+              id: my-{{ .Values.taskName }}
+              input:
+                user: "dev"
+            # Run other commands after task
+            - echo "{{ .Values.taskName }} completed !!"
+          onComplete:
+            - echo "Step done!"
+          onFailure:
+            - echo "testing published task failed"
+          onSuccess:
+            - echo "testing of published task {{ .Values.taskName }}" completed
+      {{ else }}
+      - name: test_published_task
+        type: Bash
+        configuration:
+          inputSteps:
+            - name: build_and_publish_task
+          integrations:
+            - name: {{ .Values.artifactoryIntegration }}
+        execution:
+          onExecute:
+            # Run task
+            - task: jfrog/{{ .Values.taskName }}@v{{ .Values.taskVersion }}
+              id: my-{{ .Values.taskName }}
+              input:
+                user: "dev"
+            # Run other commands after task
+            - echo "{{ .Values.taskName }} completed !!"
+          onComplete:
+            - echo "Step done!"
+          onFailure:
+            - echo "testing published task failed"
+          onSuccess:
+            - echo "testing of published task {{ .Values.taskName }}" completed
+      {{ end }}
